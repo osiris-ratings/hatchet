@@ -37,6 +37,25 @@ WHERE
     AND "autoDeleted" = true;
 
 -- name: AddMessage :exec
+WITH ensure_queue AS (
+    INSERT INTO "MessageQueue" (
+        "name",
+        "lastActive",
+        "durable",
+        "autoDeleted",
+        "exclusive"
+    )
+    VALUES (
+        @queueId::text,
+        NOW(),
+        @durable::boolean,
+        @autoDeleted::boolean,
+        @exclusive::boolean
+    )
+    ON CONFLICT ("name") DO UPDATE
+    SET "lastActive" = NOW()
+    RETURNING "name"
+)
 INSERT INTO
     "MessageQueueItem" (
         "payload",
@@ -44,13 +63,12 @@ INSERT INTO
         "readAfter",
         "expiresAt"
     )
-VALUES
-    (
-        @payload::jsonb,
-        @queueId::text,
-        NOW(),
-        NOW() + INTERVAL '5 minutes'
-    );
+SELECT
+    @payload::jsonb,
+    "name",
+    NOW(),
+    NOW() + INTERVAL '5 minutes'
+FROM ensure_queue;
 
 -- name: BulkAddMessage :copyfrom
 INSERT INTO

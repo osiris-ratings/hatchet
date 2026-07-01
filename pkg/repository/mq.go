@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/hatchet-dev/hatchet/pkg/repository/sqlchelpers"
 	"github.com/hatchet-dev/hatchet/pkg/repository/sqlcv1"
 	"github.com/hatchet-dev/hatchet/pkg/telemetry"
 )
@@ -24,7 +22,7 @@ type PubSubMessage struct {
 type MessageQueueRepository interface {
 	// PubSub
 	Listen(ctx context.Context, name string, f func(ctx context.Context, notification *PubSubMessage) error) error
-	Notify(ctx context.Context, name string, payload string) error
+	Notify(ctx context.Context, name string, payload string, durable, autoDeleted, exclusive bool) error
 
 	// Queues
 	BindQueue(ctx context.Context, queue string, durable, autoDeleted, exclusive bool, exclusiveConsumer *string) error
@@ -32,7 +30,7 @@ type MessageQueueRepository interface {
 	CleanupQueues(ctx context.Context) error
 
 	// Messages
-	AddMessage(ctx context.Context, queue string, payload []byte) error
+	AddMessage(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error
 	ReadMessages(ctx context.Context, queue string, qos int) ([]*sqlcv1.ReadMessagesRow, error)
 	AckMessage(ctx context.Context, id int64) error
 	CleanupMessageQueueItems(ctx context.Context) error
@@ -60,7 +58,7 @@ func (m *messageQueueRepository) Listen(ctx context.Context, name string, f func
 	return m.m.listen(ctx, name, f)
 }
 
-func (m *messageQueueRepository) Notify(ctx context.Context, name string, payload string) error {
+func (m *messageQueueRepository) Notify(ctx context.Context, name string, payload string, durable, autoDeleted, exclusive bool) error {
 	wrappedPayload, err := m.m.wrapMessage(name, payload)
 	if err != nil {
 		m.l.Error().Ctx(ctx).Err(err).Msg("error wrapping message")
@@ -70,28 +68,20 @@ func (m *messageQueueRepository) Notify(ctx context.Context, name string, payloa
 	// PostgreSQL's pg_notify has an 8000 byte limit
 	// If the wrapped message exceeds this, fall back to database storage
 	if len(wrappedPayload) > 8000 {
-		return m.AddMessage(ctx, name, []byte(payload))
+		return m.AddMessage(ctx, name, []byte(payload), durable, autoDeleted, exclusive)
 	}
 
 	return m.m.notify(ctx, wrappedPayload)
 }
 
-func (m *messageQueueRepository) AddMessage(ctx context.Context, queue string, payload []byte) error {
-	p := []sqlcv1.BulkAddMessageParams{}
-
-	p = append(p, sqlcv1.BulkAddMessageParams{
-		QueueId: pgtype.Text{
-			String: queue,
-			Valid:  true,
-		},
-		Payload:   payload,
-		ExpiresAt: sqlchelpers.TimestampFromTime(time.Now().UTC().Add(5 * time.Minute)),
-		ReadAfter: sqlchelpers.TimestampFromTime(time.Now().UTC()),
+func (m *messageQueueRepository) AddMessage(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error {
+	return m.queries.AddMessage(ctx, m.pool, sqlcv1.AddMessageParams{
+		Queueid:     queue,
+		Payload:     payload,
+		Durable:     durable,
+		Autodeleted: autoDeleted,
+		Exclusive:   exclusive,
 	})
-
-	_, err := m.queries.BulkAddMessage(ctx, m.pool, p)
-
-	return err
 }
 
 func (m *messageQueueRepository) BindQueue(ctx context.Context, queue string, durable, autoDeleted, exclusive bool, exclusiveConsumer *string) error {

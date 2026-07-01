@@ -13,6 +13,25 @@ import (
 )
 
 const addMessage = `-- name: AddMessage :exec
+WITH ensure_queue AS (
+    INSERT INTO "MessageQueue" (
+        "name",
+        "lastActive",
+        "durable",
+        "autoDeleted",
+        "exclusive"
+    )
+    VALUES (
+        $2::text,
+        NOW(),
+        $3::boolean,
+        $4::boolean,
+        $5::boolean
+    )
+    ON CONFLICT ("name") DO UPDATE
+    SET "lastActive" = NOW()
+    RETURNING "name"
+)
 INSERT INTO
     "MessageQueueItem" (
         "payload",
@@ -20,22 +39,30 @@ INSERT INTO
         "readAfter",
         "expiresAt"
     )
-VALUES
-    (
-        $1::jsonb,
-        $2::text,
-        NOW(),
-        NOW() + INTERVAL '5 minutes'
-    )
+SELECT
+    $1::jsonb,
+    "name",
+    NOW(),
+    NOW() + INTERVAL '5 minutes'
+FROM ensure_queue
 `
 
 type AddMessageParams struct {
-	Payload []byte `json:"payload"`
-	Queueid string `json:"queueid"`
+	Payload     []byte `json:"payload"`
+	Queueid     string `json:"queueid"`
+	Durable     bool   `json:"durable"`
+	Autodeleted bool   `json:"autodeleted"`
+	Exclusive   bool   `json:"exclusive"`
 }
 
 func (q *Queries) AddMessage(ctx context.Context, db DBTX, arg AddMessageParams) error {
-	_, err := db.Exec(ctx, addMessage, arg.Payload, arg.Queueid)
+	_, err := db.Exec(ctx, addMessage,
+		arg.Payload,
+		arg.Queueid,
+		arg.Durable,
+		arg.Autodeleted,
+		arg.Exclusive,
+	)
 	return err
 }
 
