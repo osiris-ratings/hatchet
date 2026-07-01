@@ -53,7 +53,7 @@ WITH ensure_queue AS (
         NOW(),
         $3::boolean,
         $4::boolean,
-        false
+        $5::boolean
     )
     ON CONFLICT ("name") DO UPDATE
     SET "lastActive" = NOW()
@@ -79,6 +79,7 @@ type AddMessageEnsuringQueueParams struct {
 	Queueid     string `json:"queueid"`
 	Durable     bool   `json:"durable"`
 	Autodeleted bool   `json:"autodeleted"`
+	Exclusive   bool   `json:"exclusive"`
 }
 
 func (q *Queries) AddMessageEnsuringQueue(ctx context.Context, db DBTX, arg AddMessageEnsuringQueueParams) error {
@@ -87,6 +88,7 @@ func (q *Queries) AddMessageEnsuringQueue(ctx context.Context, db DBTX, arg AddM
 		arg.Queueid,
 		arg.Durable,
 		arg.Autodeleted,
+		arg.Exclusive,
 	)
 	return err
 }
