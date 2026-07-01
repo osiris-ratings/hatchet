@@ -154,8 +154,10 @@ func (p *PostgresMessageQueue) addMessage(ctx context.Context, queue msgqueue.Qu
 
 	if !queue.Durable() {
 		err = p.pubNonDurableMessages(ctx, queue, task)
+	} else if autoDeleted && !exclusive {
+		err = p.repo.AddMessageEnsuringQueue(ctx, queue.Name(), msgBytes, durable, autoDeleted)
 	} else {
-		err = p.repo.AddMessage(ctx, queue.Name(), msgBytes, durable, autoDeleted, exclusive)
+		err = p.repo.AddMessage(ctx, queue.Name(), msgBytes)
 	}
 
 	if err != nil {

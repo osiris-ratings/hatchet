@@ -18,7 +18,8 @@ SET
     "durable" = @durable::boolean,
     "autoDeleted" = @autoDeleted::boolean,
     "exclusive" = @exclusive::boolean,
-    "exclusiveConsumerId" = CASE WHEN sqlc.narg('exclusiveConsumerId')::uuid IS NOT NULL THEN sqlc.narg('exclusiveConsumerId')::uuid ELSE NULL END
+    "exclusiveConsumerId" = CASE WHEN sqlc.narg('exclusiveConsumerId')::uuid IS NOT NULL THEN sqlc.narg('exclusiveConsumerId')::uuid ELSE NULL END,
+    "lastActive" = NOW()
 RETURNING *;
 
 -- name: UpdateMessageQueueActive :exec
@@ -37,6 +38,22 @@ WHERE
     AND "autoDeleted" = true;
 
 -- name: AddMessage :exec
+INSERT INTO
+    "MessageQueueItem" (
+        "payload",
+        "queueId",
+        "readAfter",
+        "expiresAt"
+    )
+VALUES
+    (
+        @payload::jsonb,
+        @queueId::text,
+        NOW(),
+        NOW() + INTERVAL '5 minutes'
+    );
+
+-- name: AddMessageEnsuringQueue :exec
 WITH ensure_queue AS (
     INSERT INTO "MessageQueue" (
         "name",
@@ -50,7 +67,7 @@ WITH ensure_queue AS (
         NOW(),
         @durable::boolean,
         @autoDeleted::boolean,
-        @exclusive::boolean
+        false
     )
     ON CONFLICT ("name") DO UPDATE
     SET "lastActive" = NOW()

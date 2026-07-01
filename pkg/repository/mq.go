@@ -30,7 +30,8 @@ type MessageQueueRepository interface {
 	CleanupQueues(ctx context.Context) error
 
 	// Messages
-	AddMessage(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error
+	AddMessage(ctx context.Context, queue string, payload []byte) error
+	AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted bool) error
 	ReadMessages(ctx context.Context, queue string, qos int) ([]*sqlcv1.ReadMessagesRow, error)
 	AckMessage(ctx context.Context, id int64) error
 	CleanupMessageQueueItems(ctx context.Context) error
@@ -68,19 +69,33 @@ func (m *messageQueueRepository) Notify(ctx context.Context, name string, payloa
 	// PostgreSQL's pg_notify has an 8000 byte limit
 	// If the wrapped message exceeds this, fall back to database storage
 	if len(wrappedPayload) > 8000 {
-		return m.AddMessage(ctx, name, []byte(payload), durable, autoDeleted, exclusive)
+		if autoDeleted && !exclusive {
+			return m.AddMessageEnsuringQueue(ctx, name, []byte(payload), durable, autoDeleted)
+		}
+
+		return m.AddMessage(ctx, name, []byte(payload))
 	}
 
 	return m.m.notify(ctx, wrappedPayload)
 }
 
-func (m *messageQueueRepository) AddMessage(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error {
+func (m *messageQueueRepository) AddMessage(ctx context.Context, queue string, payload []byte) error {
 	return m.queries.AddMessage(ctx, m.pool, sqlcv1.AddMessageParams{
+		Queueid: queue,
+		Payload: payload,
+	})
+}
+
+func (m *messageQueueRepository) AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted bool) error {
+	if !autoDeleted {
+		return m.AddMessage(ctx, queue, payload)
+	}
+
+	return m.queries.AddMessageEnsuringQueue(ctx, m.pool, sqlcv1.AddMessageEnsuringQueueParams{
 		Queueid:     queue,
 		Payload:     payload,
 		Durable:     durable,
 		Autodeleted: autoDeleted,
-		Exclusive:   exclusive,
 	})
 }
 

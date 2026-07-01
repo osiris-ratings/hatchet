@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,7 @@ import (
 	"github.com/hatchet-dev/hatchet/pkg/repository/sqlcv1"
 )
 
-func TestAddMessageCreatesMissingQueue(t *testing.T) {
+func TestAddMessageEnsuringQueueCreatesMissingQueue(t *testing.T) {
 	pool, cleanup := setupPostgresWithMigration(t)
 	defer cleanup()
 
@@ -20,19 +21,19 @@ func TestAddMessageCreatesMissingQueue(t *testing.T) {
 	q := sqlcv1.New()
 	const name = "mq-selfheal-missing-queue"
 
-	err := q.AddMessage(ctx, pool, sqlcv1.AddMessageParams{
+	err := q.AddMessageEnsuringQueue(ctx, pool, sqlcv1.AddMessageEnsuringQueueParams{
 		Queueid:     name,
 		Payload:     []byte(`{"hello":"world"}`),
 		Durable:     false,
 		Autodeleted: true,
-		Exclusive:   false,
 	})
-	require.NoError(t, err, "AddMessage must create the parent queue, not raise MessageQueueItem_queueId_fkey (23503)")
+	require.NoError(t, err, "AddMessageEnsuringQueue must create the parent queue, not raise MessageQueueItem_queueId_fkey (23503)")
 
-	var autoDeleted bool
-	err = pool.QueryRow(ctx, `SELECT "autoDeleted" FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&autoDeleted)
+	var autoDeleted, exclusive bool
+	err = pool.QueryRow(ctx, `SELECT "autoDeleted", "exclusive" FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&autoDeleted, &exclusive)
 	require.NoError(t, err)
 	assert.True(t, autoDeleted, "the parent queue must be created with the supplied attributes")
+	assert.False(t, exclusive, "the self-heal path must not create exclusive queues without an exclusive consumer")
 
 	var items int
 	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueueItem" WHERE "queueId" = $1`, name).Scan(&items)
@@ -40,7 +41,7 @@ func TestAddMessageCreatesMissingQueue(t *testing.T) {
 	assert.Equal(t, 1, items)
 }
 
-func TestAddMessageSurvivesQueueGC(t *testing.T) {
+func TestAddMessageEnsuringQueueSurvivesQueueGC(t *testing.T) {
 	pool, cleanup := setupPostgresWithMigration(t)
 	defer cleanup()
 
@@ -69,17 +70,57 @@ func TestAddMessageSurvivesQueueGC(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, reaped, "queue should have been reaped, setting up the race")
 
-	err = q.AddMessage(ctx, pool, sqlcv1.AddMessageParams{
+	err = q.AddMessageEnsuringQueue(ctx, pool, sqlcv1.AddMessageEnsuringQueueParams{
 		Queueid:     name,
 		Payload:     []byte(`{"hello":"world"}`),
 		Durable:     false,
 		Autodeleted: true,
-		Exclusive:   false,
 	})
-	require.NoError(t, err, "AddMessage must recreate a GC'd parent, not raise 23503")
+	require.NoError(t, err, "AddMessageEnsuringQueue must recreate a GC'd parent, not raise 23503")
 
 	var exists int
 	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&exists)
 	require.NoError(t, err)
-	assert.Equal(t, 1, exists, "the parent queue must be recreated by AddMessage")
+	assert.Equal(t, 1, exists, "the parent queue must be recreated by AddMessageEnsuringQueue")
+}
+
+func TestBindRefreshesLastActive(t *testing.T) {
+	pool, cleanup := setupPostgresWithMigration(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	q := sqlcv1.New()
+	const name = "mq-selfheal-bind-refresh-queue"
+
+	bind := func() {
+		_, err := q.UpsertMessageQueue(ctx, pool, sqlcv1.UpsertMessageQueueParams{
+			Name:        name,
+			Durable:     false,
+			Autodeleted: true,
+			Exclusive:   false,
+		})
+		require.NoError(t, err)
+	}
+
+	bind()
+
+	_, err := pool.Exec(ctx,
+		`UPDATE "MessageQueue" SET "lastActive" = NOW() - INTERVAL '2 hours' WHERE "name" = $1`,
+		name,
+	)
+	require.NoError(t, err)
+
+	bind()
+
+	var lastActive time.Time
+	err = pool.QueryRow(ctx, `SELECT "lastActive" FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&lastActive)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), lastActive, time.Minute)
+
+	require.NoError(t, q.CleanupMessageQueue(ctx, pool))
+
+	var exists int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&exists)
+	require.NoError(t, err)
+	assert.Equal(t, 1, exists, "a recently rebound queue must survive cleanup")
 }

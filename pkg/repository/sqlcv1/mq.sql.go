@@ -13,6 +13,33 @@ import (
 )
 
 const addMessage = `-- name: AddMessage :exec
+INSERT INTO
+    "MessageQueueItem" (
+        "payload",
+        "queueId",
+        "readAfter",
+        "expiresAt"
+    )
+VALUES
+    (
+        $1::jsonb,
+        $2::text,
+        NOW(),
+        NOW() + INTERVAL '5 minutes'
+    )
+`
+
+type AddMessageParams struct {
+	Payload []byte `json:"payload"`
+	Queueid string `json:"queueid"`
+}
+
+func (q *Queries) AddMessage(ctx context.Context, db DBTX, arg AddMessageParams) error {
+	_, err := db.Exec(ctx, addMessage, arg.Payload, arg.Queueid)
+	return err
+}
+
+const addMessageEnsuringQueue = `-- name: AddMessageEnsuringQueue :exec
 WITH ensure_queue AS (
     INSERT INTO "MessageQueue" (
         "name",
@@ -26,7 +53,7 @@ WITH ensure_queue AS (
         NOW(),
         $3::boolean,
         $4::boolean,
-        $5::boolean
+        false
     )
     ON CONFLICT ("name") DO UPDATE
     SET "lastActive" = NOW()
@@ -47,21 +74,19 @@ SELECT
 FROM ensure_queue
 `
 
-type AddMessageParams struct {
+type AddMessageEnsuringQueueParams struct {
 	Payload     []byte `json:"payload"`
 	Queueid     string `json:"queueid"`
 	Durable     bool   `json:"durable"`
 	Autodeleted bool   `json:"autodeleted"`
-	Exclusive   bool   `json:"exclusive"`
 }
 
-func (q *Queries) AddMessage(ctx context.Context, db DBTX, arg AddMessageParams) error {
-	_, err := db.Exec(ctx, addMessage,
+func (q *Queries) AddMessageEnsuringQueue(ctx context.Context, db DBTX, arg AddMessageEnsuringQueueParams) error {
+	_, err := db.Exec(ctx, addMessageEnsuringQueue,
 		arg.Payload,
 		arg.Queueid,
 		arg.Durable,
 		arg.Autodeleted,
-		arg.Exclusive,
 	)
 	return err
 }
@@ -254,7 +279,8 @@ SET
     "durable" = $2::boolean,
     "autoDeleted" = $3::boolean,
     "exclusive" = $4::boolean,
-    "exclusiveConsumerId" = CASE WHEN $5::uuid IS NOT NULL THEN $5::uuid ELSE NULL END
+    "exclusiveConsumerId" = CASE WHEN $5::uuid IS NOT NULL THEN $5::uuid ELSE NULL END,
+    "lastActive" = NOW()
 RETURNING name, "lastActive", durable, "autoDeleted", exclusive, "exclusiveConsumerId"
 `
 
