@@ -67,7 +67,7 @@ WITH ensure_queue AS (
         NOW(),
         @durable::boolean,
         @autoDeleted::boolean,
-        false
+        @exclusive::boolean
     )
     ON CONFLICT ("name") DO UPDATE
     SET "lastActive" = NOW()

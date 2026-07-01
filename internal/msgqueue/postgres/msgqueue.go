@@ -154,8 +154,11 @@ func (p *PostgresMessageQueue) addMessage(ctx context.Context, queue msgqueue.Qu
 
 	if !queue.Durable() {
 		err = p.pubNonDurableMessages(ctx, queue, task)
-	} else if autoDeleted && !exclusive {
-		err = p.repo.AddMessageEnsuringQueue(ctx, queue.Name(), msgBytes, durable, autoDeleted)
+	} else if autoDeleted {
+		// Any auto-deleted queue is reap-eligible (CleanupMessageQueue keys on
+		// autoDeleted alone), so self-heal the parent on insert — including the
+		// durable+exclusive dispatcher queue, which is expirable⇒autoDeleted.
+		err = p.repo.AddMessageEnsuringQueue(ctx, queue.Name(), msgBytes, durable, autoDeleted, exclusive)
 	} else {
 		err = p.repo.AddMessage(ctx, queue.Name(), msgBytes)
 	}
