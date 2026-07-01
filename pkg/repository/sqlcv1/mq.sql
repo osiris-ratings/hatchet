@@ -18,7 +18,8 @@ SET
     "durable" = @durable::boolean,
     "autoDeleted" = @autoDeleted::boolean,
     "exclusive" = @exclusive::boolean,
-    "exclusiveConsumerId" = CASE WHEN sqlc.narg('exclusiveConsumerId')::uuid IS NOT NULL THEN sqlc.narg('exclusiveConsumerId')::uuid ELSE NULL END
+    "exclusiveConsumerId" = CASE WHEN sqlc.narg('exclusiveConsumerId')::uuid IS NOT NULL THEN sqlc.narg('exclusiveConsumerId')::uuid ELSE NULL END,
+    "lastActive" = NOW()
 RETURNING *;
 
 -- name: UpdateMessageQueueActive :exec

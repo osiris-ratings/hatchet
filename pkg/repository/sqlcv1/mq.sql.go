@@ -227,7 +227,8 @@ SET
     "durable" = $2::boolean,
     "autoDeleted" = $3::boolean,
     "exclusive" = $4::boolean,
-    "exclusiveConsumerId" = CASE WHEN $5::uuid IS NOT NULL THEN $5::uuid ELSE NULL END
+    "exclusiveConsumerId" = CASE WHEN $5::uuid IS NOT NULL THEN $5::uuid ELSE NULL END,
+    "lastActive" = NOW()
 RETURNING name, "lastActive", durable, "autoDeleted", exclusive, "exclusiveConsumerId"
 `
 
