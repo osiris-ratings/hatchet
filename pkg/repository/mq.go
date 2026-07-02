@@ -31,7 +31,7 @@ type MessageQueueRepository interface {
 
 	// Messages
 	AddMessage(ctx context.Context, queue string, payload []byte) error
-	AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted bool) error
+	AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error
 	ReadMessages(ctx context.Context, queue string, qos int) ([]*sqlcv1.ReadMessagesRow, error)
 	AckMessage(ctx context.Context, id int64) error
 	CleanupMessageQueueItems(ctx context.Context) error
@@ -69,8 +69,15 @@ func (m *messageQueueRepository) Notify(ctx context.Context, name string, payloa
 	// PostgreSQL's pg_notify has an 8000 byte limit
 	// If the wrapped message exceeds this, fall back to database storage
 	if len(wrappedPayload) > 8000 {
-		if autoDeleted && !exclusive {
-			return m.AddMessageEnsuringQueue(ctx, name, []byte(payload), durable, autoDeleted)
+		// An auto-deleted queue can be reaped by CleanupMessageQueue in the window
+		// between the producer's 15s existence-cache hit and this insert, so ensure
+		// the parent row exists in the same statement (FK can't fail). This covers
+		// EXCLUSIVE auto-deleted queues too — the dispatcher queue (expirable ⇒
+		// autoDeleted, exclusive) and controller consumer queues — which the reaper
+		// deletes regardless of exclusivity; gating on `!exclusive` left them
+		// exposed to the exact 23503 this fix exists to kill.
+		if autoDeleted {
+			return m.AddMessageEnsuringQueue(ctx, name, []byte(payload), durable, autoDeleted, exclusive)
 		}
 
 		return m.AddMessage(ctx, name, []byte(payload))
@@ -86,7 +93,7 @@ func (m *messageQueueRepository) AddMessage(ctx context.Context, queue string, p
 	})
 }
 
-func (m *messageQueueRepository) AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted bool) error {
+func (m *messageQueueRepository) AddMessageEnsuringQueue(ctx context.Context, queue string, payload []byte, durable, autoDeleted, exclusive bool) error {
 	if !autoDeleted {
 		return m.AddMessage(ctx, queue, payload)
 	}
@@ -96,6 +103,7 @@ func (m *messageQueueRepository) AddMessageEnsuringQueue(ctx context.Context, qu
 		Payload:     payload,
 		Durable:     durable,
 		Autodeleted: autoDeleted,
+		Exclusive:   exclusive,
 	})
 }
 
