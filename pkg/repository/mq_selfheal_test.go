@@ -7,9 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hatchet-dev/hatchet/pkg/repository/cache"
 	"github.com/hatchet-dev/hatchet/pkg/repository/sqlcv1"
 )
 
@@ -183,4 +186,119 @@ func TestBindRefreshesLastActive(t *testing.T) {
 	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&exists)
 	require.NoError(t, err)
 	assert.Equal(t, 1, exists, "a recently rebound queue must survive cleanup")
+}
+
+func mqRepoForTest(t *testing.T, pool *pgxpool.Pool) *messageQueueRepository {
+	l := zerolog.Nop()
+	lastActiveTouch := cache.New(lastActiveTouchInterval)
+	t.Cleanup(lastActiveTouch.Stop)
+
+	return &messageQueueRepository{
+		sharedRepository: &sharedRepository{
+			pool:    pool,
+			queries: sqlcv1.New(),
+			l:       &l,
+		},
+		lastActiveTouch: lastActiveTouch,
+	}
+}
+
+func TestAddMessageEnsuringQueueTouchesOncePerInterval(t *testing.T) {
+	pool, cleanup := setupPostgresWithMigration(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	repo := mqRepoForTest(t, pool)
+	const name = "mq-touch-throttle-queue"
+
+	// First publish: no touch recorded yet, so it upserts the parent (creating
+	// it) and refreshes lastActive.
+	err := repo.AddMessageEnsuringQueue(ctx, name, []byte(`{"seq":1}`), false, true, false)
+	require.NoError(t, err)
+
+	var lastActive time.Time
+	err = pool.QueryRow(ctx, `SELECT "lastActive" FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&lastActive)
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), lastActive, time.Minute)
+
+	// Backdate lastActive so any parent-row write by the next publish is
+	// detectable.
+	_, err = pool.Exec(ctx,
+		`UPDATE "MessageQueue" SET "lastActive" = NOW() - INTERVAL '30 minutes' WHERE "name" = $1`,
+		name,
+	)
+	require.NoError(t, err)
+
+	// Second publish within the touch interval: plain insert, no parent-row
+	// write.
+	err = repo.AddMessageEnsuringQueue(ctx, name, []byte(`{"seq":2}`), false, true, false)
+	require.NoError(t, err)
+
+	err = pool.QueryRow(ctx, `SELECT "lastActive" FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&lastActive)
+	require.NoError(t, err)
+	assert.Greater(t, time.Since(lastActive), 15*time.Minute,
+		"a publish within the touch interval must not rewrite the parent row")
+
+	var items int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueueItem" WHERE "queueId" = $1`, name).Scan(&items)
+	require.NoError(t, err)
+	assert.Equal(t, 2, items, "both publishes must be stored")
+}
+
+func TestAddMessageEnsuringQueueHealsReapedQueueOnFKViolation(t *testing.T) {
+	pool, cleanup := setupPostgresWithMigration(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	repo := mqRepoForTest(t, pool)
+	q := sqlcv1.New()
+	const name = "mq-touch-heal-queue"
+
+	// Warm the touch cache so the next publish takes the plain-insert path.
+	err := repo.AddMessageEnsuringQueue(ctx, name, []byte(`{"seq":1}`), true, true, true)
+	require.NoError(t, err)
+
+	// Reap the queue out from under the warm cache, exactly as
+	// CleanupMessageQueue does in the race.
+	_, err = pool.Exec(ctx,
+		`UPDATE "MessageQueue" SET "lastActive" = NOW() - INTERVAL '2 hours' WHERE "name" = $1`,
+		name,
+	)
+	require.NoError(t, err)
+	require.NoError(t, q.CleanupMessageQueue(ctx, pool))
+
+	var reaped int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueue" WHERE "name" = $1`, name).Scan(&reaped)
+	require.NoError(t, err)
+	require.Equal(t, 0, reaped, "queue should have been reaped, setting up the race")
+
+	err = repo.AddMessageEnsuringQueue(ctx, name, []byte(`{"seq":2}`), true, true, true)
+	require.NoError(t, err, "a publish against a reaped queue must self-heal, not surface 23503")
+
+	var exclusive bool
+	var lastActive time.Time
+	err = pool.QueryRow(ctx,
+		`SELECT "exclusive", "lastActive" FROM "MessageQueue" WHERE "name" = $1`, name,
+	).Scan(&exclusive, &lastActive)
+	require.NoError(t, err)
+	assert.True(t, exclusive, "the healed queue must preserve the supplied bind attributes")
+	assert.WithinDuration(t, time.Now(), lastActive, time.Minute,
+		"the heal must refresh lastActive so the queue is not immediately reap-eligible again")
+
+	var items int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM "MessageQueueItem" WHERE "queueId" = $1`, name).Scan(&items)
+	require.NoError(t, err)
+	assert.Equal(t, 1, items, "the post-reap message must be stored against the recreated queue")
+}
+
+func TestAddMessageEnsuringQueueNonAutoDeletedPropagatesFKViolation(t *testing.T) {
+	pool, cleanup := setupPostgresWithMigration(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	repo := mqRepoForTest(t, pool)
+
+	err := repo.AddMessageEnsuringQueue(ctx, "mq-touch-missing-static-queue", []byte(`{}`), true, false, false)
+	require.Error(t, err, "non-auto-deleted queues are never reaped, so a missing parent is a real bug and must not be masked by a self-heal")
+	assert.True(t, isForeignKeyViolation(err))
 }
