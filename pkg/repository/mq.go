@@ -137,6 +137,10 @@ func (m *messageQueueRepository) AddMessageEnsuringQueue(ctx context.Context, qu
 		return err
 	}
 
+	// Healing is expected at most once per queue per reap; a sustained rate
+	// means something else is deleting MessageQueue rows out-of-band.
+	m.l.Warn().Ctx(ctx).Str("queue", queue).Msg("parent queue row missing on publish; self-healing by recreating it")
+
 	return m.addMessageWithQueueTouch(ctx, queue, payload, durable, autoDeleted, exclusive)
 }
 
