@@ -105,7 +105,7 @@ func NewConcurrencyStrategy(
 		strategy:  strategy,
 		repo:      repo,
 		l:         l,
-		compare:   priorityCompare,
+		compare:   comparatorForStrategy(strategy.Strategy),
 		outbox:    outbox,
 		topic:     getTopic(strategy),
 		built:     make(chan struct{}),
@@ -147,7 +147,13 @@ func NewNoOpFlusher(
 				l.Error().Err(err).Msgf("failed to process messages for topic %s", topic)
 			}
 
-			time.Sleep(5 * time.Second)
+			// context-aware sleep so this goroutine exits promptly on shutdown rather than
+			// lingering in a fixed sleep (which otherwise trips goleak and delays teardown).
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
 		}
 	}()
 }
@@ -407,6 +413,9 @@ type walMessage struct {
 	ScheduleTimeoutAtMs int64     `json:"scheduleTimeoutAtMs"`
 	Priority            int32     `json:"priority"`
 	TaskRetryCount      int32     `json:"taskRetryCount"`
+
+	// only populated by UPDATE messages
+	IsFilled bool `json:"isFilled"`
 }
 
 func (c *ConcurrencyStrategy) buildIndex(ctx context.Context) error {
@@ -491,11 +500,22 @@ func (c *ConcurrencyStrategy) processWALMessages(ctx context.Context, tx pgx.Tx,
 // Timed-out queued slots are handled by the shared pipeline and are not passed here.
 type decideFn func(sq *subQueue) (toFill, toCancel []slot)
 
+// comparatorForStrategy selects the slot ordering for a strategy kind. GROUP_ROUND_ROBIN and
+// CANCEL_NEWEST keep the oldest among equal-priority slots (priorityCompare); CANCEL_IN_PROGRESS
+// keeps the newest (cancelInProgressCompare), so a newer arrival preempts an older run. "Smaller"
+// under the chosen comparator always means "should run".
+func comparatorForStrategy(kind sqlcv1.V1ConcurrencyStrategy) func(a, b slot) int {
+	if kind == sqlcv1.V1ConcurrencyStrategyCANCELINPROGRESS {
+		return cancelInProgressCompare
+	}
+	return priorityCompare
+}
+
 // decide selects the per-sub-queue decision function for this strategy's kind. All three fill free
-// capacity from the queued backlog in priorityCompare order; they differ in what happens to the
-// slots that don't fit: GROUP_ROUND_ROBIN leaves them queued, CANCEL_NEWEST cancels them (reject the
+// capacity from the queued backlog in comparator order; they differ in what happens to the slots
+// that don't fit: GROUP_ROUND_ROBIN leaves them queued, CANCEL_NEWEST cancels them (reject the
 // newest arrivals, never touch running work), and CANCEL_IN_PROGRESS cancels them too but may also
-// preempt a running slot when a higher-priority slot is waiting.
+// preempt a running slot when a higher-priority-or-newer slot is waiting.
 func (c *ConcurrencyStrategy) decide() decideFn {
 	switch c.strategy.Strategy {
 	case sqlcv1.V1ConcurrencyStrategyGROUPROUNDROBIN:
@@ -598,7 +618,9 @@ func applyWAL(sq *subQueue, msgs []walMessage) []slot {
 				if currentRunningSlot.taskRetryCount < msg.TaskRetryCount {
 					superseded = append(superseded, currentRunningSlot)
 					sq.running.delete(msg.TaskId)
-					sq.running.insert(walMessageToSlot(msg))
+
+					// place the new slot in the queued index, so it goes through the regular promotion pipeline
+					sq.queued.insert(walMessageToSlot(msg))
 				} else if currentRunningSlot.taskRetryCount != msg.TaskRetryCount {
 					superseded = append(superseded, walMessageToSlot(msg))
 				}
@@ -613,6 +635,19 @@ func applyWAL(sq *subQueue, msgs []walMessage) []slot {
 				}
 			} else {
 				sq.queued.insert(walMessageToSlot(msg))
+			}
+		case "UPDATE":
+			// UPDATE never represents a duplicate row - it's the same physical v1_concurrency_slot row
+			// being resynced in place (a retry-reset: task_retry_count/schedule_timeout_at/priority
+			// changed, is_filled reset to FALSE). Unlike INSERT, nothing is ever superseded/cancelled
+			// here - just move the slot into whichever index matches msg.IsFilled.
+			newSlot := walMessageToSlot(msg)
+			if msg.IsFilled {
+				sq.queued.delete(msg.TaskId)
+				sq.running.insert(newSlot)
+			} else {
+				sq.running.delete(msg.TaskId)
+				sq.queued.insert(newSlot)
 			}
 		case "DELETE":
 			// note: since we're processing a DELETE, it's already been removed from the database, we're just
