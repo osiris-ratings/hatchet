@@ -637,7 +637,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -885,6 +885,20 @@ wheels = [
 ]
 
 [[package]]
+name = "grpcio-status"
+version = "1.81.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "googleapis-common-protos" },
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/26/0aa9168c87882381fd810d140c279a2490ed6aee655f0515d6f56c5ca404/grpcio_status-1.81.1.tar.gz", hash = "sha256:9389a03e746017b10f0630c064289201458f3ce01f5d7ef4b0bebc1ef6cf82ad", size = 13923, upload-time = "2026-06-11T12:58:48.636Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/5e/5abfec5f7e89d3b7993d57cfb025ca5f968a2c18656d7fcda2b6919440b9/grpcio_status-1.81.1-py3-none-any.whl", hash = "sha256:08072fa9995f4a95c647fc6f4f85e2411573d00087bcabdf30f260114338f232", size = 14638, upload-time = "2026-06-11T12:58:31.982Z" },
+]
+
+[[package]]
 name = "grpcio-tools"
 version = "1.81.1"
 source = { registry = "https://pypi.org/simple" }
@@ -958,11 +972,12 @@ wheels = [
 
 [[package]]
 name = "hatchet-sdk"
-version = "1.33.18"
+version = "1.35.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "grpcio" },
+    { name = "grpcio-status" },
     { name = "grpcio-tools" },
     { name = "prometheus-client" },
     { name = "protobuf" },
@@ -997,6 +1012,7 @@ lint = [
     { name = "psutil" },
     { name = "ruff" },
     { name = "types-grpcio" },
+    { name = "types-grpcio-status" },
     { name = "types-protobuf" },
     { name = "types-psutil" },
     { name = "types-requests" },
@@ -1035,6 +1051,7 @@ requires-dist = [
     { name = "click", marker = "extra == 'lint'", specifier = ">=8.4.2" },
     { name = "fastapi", marker = "extra == 'docs'", specifier = ">=0.139.0,<1" },
     { name = "grpcio", specifier = ">=1.76.0,<2" },
+    { name = "grpcio-status", specifier = ">=1.76.0,<2" },
     { name = "grpcio-tools", specifier = ">=1.76.0,<2" },
     { name = "markdownify", marker = "extra == 'docs'", specifier = ">=1.2.3" },
     { name = "mcp", marker = "extra == 'claude'" },
@@ -1067,6 +1084,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=8.4.1" },
     { name = "types-beautifulsoup4", marker = "extra == 'docs'", specifier = ">=4.12.0.20250204" },
     { name = "types-grpcio", marker = "extra == 'lint'", specifier = ">=1.0.0.20260614" },
+    { name = "types-grpcio-status", marker = "extra == 'lint'", specifier = ">=1.0.0.20260408,<2.0.0.0" },
     { name = "types-protobuf", marker = "extra == 'lint'", specifier = ">=5.28.3.20241030" },
     { name = "types-psutil", marker = "extra == 'lint'", specifier = ">=7.2.2.20260518" },
     { name = "types-requests", marker = "extra == 'lint'", specifier = ">=2.33.0.20260712" },
@@ -2855,11 +2873,11 @@ wheels = [
 
 [[package]]
 name = "setuptools"
-version = "82.0.1"
+version = "83.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz", hash = "sha256:7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9", size = 1152316, upload-time = "2026-03-09T12:47:17.221Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/26/f5d29e25ffdb535afef2d35cdb55b325298f96debd670da4c325e08d70f4/setuptools-83.0.0.tar.gz", hash = "sha256:025bccbbf0fa05b6192bc64ae1e7b16e001fd6d6d4d5de03c97b1c1ade523bef", size = 1154254, upload-time = "2026-07-04T15:31:22.699Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl", hash = "sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb", size = 1006223, upload-time = "2026-03-09T12:47:15.026Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
 ]
 
 [[package]]
@@ -3009,6 +3027,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4f/1c/e299150827a2224fe9ddb59e9f789f0eb8e72e0befc23fd47195024311fa/types_grpcio-1.0.0.20260614.tar.gz", hash = "sha256:e86d1aabb7e7eedae487c3ac10e010a13d5db1fd350e766562053af557366aab", size = 15063, upload-time = "2026-06-14T06:23:33.591Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/33/f5/a8b8ca4d891bc4e835ef758a8fb50c7539c7f45bc0e42fae2b847cbc59b7/types_grpcio-1.0.0.20260614-py3-none-any.whl", hash = "sha256:050472cb4ef329ae8fe20278c62bc0da5b961aad3dd889cc35f6e0c70d368dae", size = 15629, upload-time = "2026-06-14T06:23:32.616Z" },
+]
+
+[[package]]
+name = "types-grpcio-status"
+version = "1.0.0.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-grpcio" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/ff/a0270f7083f76167030dacc1eaa81f9424a450b1828733c7b7f1607e7d40/types_grpcio_status-1.0.0.20260408.tar.gz", hash = "sha256:8c8b5a5fd5e661488bb3dfb924fd3562892bae01b9a24e607a26bb0029f3fb71", size = 7092, upload-time = "2026-04-08T04:35:18.169Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/b1/dcdd89efd40eb4a4c2458681a53faf057096db8e2b52a4f94f2bb935aef0/types_grpcio_status-1.0.0.20260408-py3-none-any.whl", hash = "sha256:5d421512b6a9ae5d0f84cde9c251394da5bd77ddc96e122221ac23c8e1ce3acf", size = 7859, upload-time = "2026-04-08T04:35:17.434Z" },
 ]
 
 [[package]]
