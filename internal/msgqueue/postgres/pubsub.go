@@ -130,8 +130,10 @@ func (p *PubSub) Pub(ctx context.Context, topic msgqueue.Topic, msg *msgqueue.Me
 		if err == nil {
 			eg.Go(func() error {
 				// Notify will automatically fall back to database storage if the
-				// wrapped message exceeds pg_notify's 8KB limit
-				return p.repo.Notify(ctx, topic.Name(), string(msgBytes))
+				// wrapped message exceeds pg_notify's 8KB limit. The bind attrs
+				// mirror ensureQueue so the fallback can self-heal a topic row
+				// reaped between the 15s cache hit and the insert.
+				return p.repo.Notify(ctx, topic.Name(), string(msgBytes), false, true, false)
 			})
 		} else {
 			p.l.Error().Ctx(ctx).Err(err).Msg("error marshalling message")

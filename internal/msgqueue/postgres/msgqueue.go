@@ -150,7 +150,16 @@ func (p *PostgresMessageQueue) addMessage(ctx context.Context, queue msgqueue.Qu
 		return err
 	}
 
-	err = p.repo.AddMessage(ctx, queue.Name(), msgBytes)
+	durable, autoDeleted, exclusive := bindAttrs(queue)
+
+	if autoDeleted {
+		// Any auto-deleted queue is reap-eligible (CleanupMessageQueue keys on
+		// autoDeleted alone), so self-heal the parent on insert — including the
+		// durable+exclusive dispatcher queue, which is expirable⇒autoDeleted.
+		err = p.repo.AddMessageEnsuringQueue(ctx, queue.Name(), msgBytes, durable, autoDeleted, exclusive)
+	} else {
+		err = p.repo.AddMessage(ctx, queue.Name(), msgBytes)
+	}
 
 	if err != nil {
 		p.l.Error().Err(err).Msgf("error adding message for queue %s", queue.Name())
@@ -158,7 +167,7 @@ func (p *PostgresMessageQueue) addMessage(ctx context.Context, queue msgqueue.Qu
 	}
 
 	// notify the queue that a new message has been added
-	err = p.repo.Notify(ctx, queue.Name(), "")
+	err = p.repo.Notify(ctx, queue.Name(), "", durable, autoDeleted, exclusive)
 
 	if err != nil {
 		p.l.Error().Err(err).Msgf("error notifying queue %s", queue.Name())
@@ -316,21 +325,10 @@ func (p *PostgresMessageQueue) IsReady() bool {
 	return true
 }
 
-func (p *PostgresMessageQueue) upsertQueue(ctx context.Context, queue msgqueue.Queue) error {
-	if valid, exists := p.ttlCache.Get(queue.Name()); valid && exists {
-		return nil
-	}
-
-	exclusive := queue.Exclusive()
-
-	var consumer *string
-
-	if exclusive {
-		str := uuid.New().String()
-		consumer = &str
-	}
-
-	autoDeleted := queue.AutoDeleted()
+func bindAttrs(queue msgqueue.Queue) (durable, autoDeleted, exclusive bool) {
+	durable = queue.Durable()
+	exclusive = queue.Exclusive()
+	autoDeleted = queue.AutoDeleted()
 
 	// FIXME: note that this differs from the RabbitMQ implementation, since we auto-delete Postgres MQs after
 	// 1 hour of inactivity instead of immediately. So if the queue is expirable, we set it to autoDeleted and
@@ -339,8 +337,25 @@ func (p *PostgresMessageQueue) upsertQueue(ctx context.Context, queue msgqueue.Q
 		autoDeleted = true
 	}
 
+	return durable, autoDeleted, exclusive
+}
+
+func (p *PostgresMessageQueue) upsertQueue(ctx context.Context, queue msgqueue.Queue) error {
+	if valid, exists := p.ttlCache.Get(queue.Name()); valid && exists {
+		return nil
+	}
+
+	durable, autoDeleted, exclusive := bindAttrs(queue)
+
+	var consumer *string
+
+	if exclusive {
+		str := uuid.New().String()
+		consumer = &str
+	}
+
 	// bind the queue
-	err := p.repo.BindQueue(ctx, queue.Name(), queue.Durable(), autoDeleted, exclusive, consumer)
+	err := p.repo.BindQueue(ctx, queue.Name(), durable, autoDeleted, exclusive, consumer)
 
 	if err != nil {
 		p.l.Error().Err(err).Msg("error binding queue")

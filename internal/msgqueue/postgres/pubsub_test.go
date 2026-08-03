@@ -327,7 +327,7 @@ func TestPostgresPubSubMixedVersionInterop(t *testing.T) {
 	msgBytes, err := json.Marshal(msg)
 	require.NoError(t, err)
 
-	require.NoError(t, oldRepo.Notify(ctx, topic.Name(), string(msgBytes)))
+	require.NoError(t, oldRepo.Notify(ctx, topic.Name(), string(msgBytes), false, true, false))
 
 	wg.Wait()
 
