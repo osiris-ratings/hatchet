@@ -152,8 +152,8 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
       dompurify:
-        specifier: ^3.4.11
-        version: 3.4.11
+        specifier: ^3.4.13
+        version: 3.4.13
       jotai:
         specifier: ^2.19.1
         version: 2.19.1(@babel/core@7.29.7)(@babel/template@7.29.7)(@types/react@18.3.23)(react@18.3.1)
@@ -2717,8 +2717,8 @@ packages:
   dompurify@3.2.7:
     resolution: {integrity: sha512-WhL/YuveyGXJaerVlMYGWhvQswa7myDG17P7Vu65EWC05o8vfeNbvNf4d/BOvH99+ZW+LlQsc1GDKMa1vNK6dw==}
 
-  dompurify@3.4.11:
-    resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
+  dompurify@3.4.13:
+    resolution: {integrity: sha512-2vmYIoqjze2d+kakP8S/nS5shfsl587kzwEjcGlTdiksUVgFHnFCsLYDVj/JNqJVOQZGSYBTmuycv0PodwmnMQ==}
 
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
@@ -4198,8 +4198,8 @@ packages:
     peerDependencies:
       seroval: 1.4.1
 
-  seroval-plugins@1.5.5:
-    resolution: {integrity: sha512-+BDhqYM6CEn3x09v44dpa9p6974FuUB2dxk+Ctn04k0cO1Zt6QODTXfmEZK0eBaTe/fJBvP4NMGuNJ+R8T+QMg==}
+  seroval-plugins@1.6.2:
+    resolution: {integrity: sha512-TfxuUjlbBESzUOWdTkTKqvSmav0ABym+itetDXLK6mDz8SmrpdI30aF8RTXE8Bvq+tH/1yIDkvy3W0lfQb1ipQ==}
     engines: {node: '>=10'}
     peerDependencies:
       seroval: 1.4.1
@@ -6260,7 +6260,7 @@ snapshots:
       '@tanstack/history': 1.161.6
       cookie-es: 2.0.1
       seroval: 1.4.1
-      seroval-plugins: 1.5.5(seroval@1.4.1)
+      seroval-plugins: 1.6.2(seroval@1.4.1)
 
   '@tanstack/router-devtools-core@1.141.0(@tanstack/router-core@1.168.9)(csstype@3.2.3)(solid-js@1.9.10)':
     dependencies:
@@ -7137,7 +7137,7 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
-  dompurify@3.4.11:
+  dompurify@3.4.13:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -8395,7 +8395,7 @@ snapshots:
       '@posthog/core': 1.25.2
       '@posthog/types': 1.369.2
       core-js: 3.49.0
-      dompurify: 3.4.11
+      dompurify: 3.4.13
       fflate: 0.4.8
       preact: 10.28.2
       query-selector-shadow-dom: 1.0.1
@@ -8752,7 +8752,7 @@ snapshots:
     dependencies:
       seroval: 1.4.1
 
-  seroval-plugins@1.5.5(seroval@1.4.1):
+  seroval-plugins@1.6.2(seroval@1.4.1):
     dependencies:
       seroval: 1.4.1
 
